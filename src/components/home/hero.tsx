@@ -1,23 +1,19 @@
 import Link from "next/link";
 import { Container } from "@/components/layout/container";
 import { CopyEmailButton } from "@/components/home/copy-email-button";
+import { HeroBackdrop } from "@/components/hero/hero-backdrop";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
 import { site } from "@/content/site";
 
 export function Hero() {
   return (
-    <section className="relative isolate overflow-hidden">
-      {/* Slot for the particle field (Phase 2). Decorative, never carries content. */}
-      <div
-        aria-hidden
-        data-field-slot
-        className="pointer-events-none absolute inset-0 -z-10"
-      />
+    <section data-field-host className="relative isolate max-h-[580px] overflow-hidden">
+      <HeroBackdrop />
 
-      <Container className="flex min-h-[min(calc(100svh_-_3.5rem),820px)] items-center py-24">
-        <div className="max-w-[40rem]">
-          <h1 className="text-[clamp(2.5rem,6.2vw,4.75rem)] leading-[1.02] font-semibold tracking-[-0.03em] text-balance">
+      <Container className="flex min-h-[min(calc(100svh-6rem),820px)] items-center py-24">
+        <div data-field-quiet className="max-w-[60rem]">
+          <h1 className="text-[clamp(2.5rem,6.2vw,2.75rem)] leading-[1.02] font-semibold tracking-[-0.03em] text-balance uppercase">
             <span className="text-fg-muted">{site.hero.lead}</span>{" "}
             <span>{site.hero.emphasis}</span>
           </h1>

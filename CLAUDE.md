@@ -31,6 +31,7 @@
 | D10 | No location on the site. |
 | D11 | "Work with me" copy is placeholder written by Claude; the owner rewrites it later. All site copy lives in `src/content/site.ts` so it is one file to edit. |
 | D12 | **Open:** analytics for case-study opens and email copies (section 7). |
+| D13 | The site only goes live when complete, so placeholder copy and the empty Blogs nav link are intentional until then (nothing is hidden or hardened for launch yet). |
 
 ## 3. Stack
 
@@ -103,19 +104,19 @@
 
 ### Behaviour
 1. **Ambient:** slow simplex flow field (4–12 px/s), per-particle depth factor 0.4–1, soft-edge wrap.
-2. **Cursor halo** (`r_outer ≈ 160px`, `r_core ≈ 48px`): outer band = gentle magnetic **attraction**; core = soft **repulsion**, so particles settle into an orbit-like ring ~70–90px out rather than collapsing. Add a small tangential (swirl) force with a random ±1 direction per particle so particles circulate and keep **exchanging positions**. Independent noise stays on (particles never lock). Strength ramps in/out over ~500ms on pointer enter/leave. Links within the halo get a smooth brightness boost (×2 at most).
-3. **Click:** a thin 1px ripple ring expands (~520px/s, ~700ms, alpha .25 → 0) and nudges particles in the wavefront radially. At the same moment a **short-lived attractive impulse** (~250ms, decaying) pulls particles within ~240px inward. The K nearest (≤ 36 desktop, ≤ 16 lite) are captured, held with short-range mutual repulsion so they settle at **even spacing**, and connected to their **2–3 nearest neighbours** (found with the spatial grid). Edges fade in (~250ms, alpha ≤ 0.35). That evenly spaced, connected cluster is the "temporary order".
+2. **Cursor halo** (`outer = 200px`, `core = 84px`): outer band = gentle magnetic **attraction**; core = soft **repulsion**, so particles settle into an orbit-like ring ~60–65px out rather than collapsing. Add a small tangential (swirl) force with a random ±1 direction per particle so particles circulate and keep **exchanging positions** (swirl 90: ≈44 px/s, one lap ≈9s, ~50% of particle pairs swap angular order every 2s). Independent noise stays on (particles never lock). Strength ramps in/out over ~500ms on pointer enter/leave. Links within the halo get a smooth brightness boost (×2 at most).
+3. **Click:** a thin 1px ripple ring expands (~520px/s, ~700ms, alpha .3 → 0) and nudges particles in the wavefront radially. At the same moment a **short-lived attractive impulse** (~250ms, decaying) pulls particles within ~240px inward. The K nearest (≤ 36 desktop, ≤ 16 lite) are captured, held with short-range mutual repulsion so they settle at **even spacing**, and connected to their **2–3 nearest neighbours** (found with the spatial grid). Edges fade in (~250ms, alpha ≤ 0.35). That evenly spaced, connected cluster is the "temporary order" (measured: 36 members, ~26px nearest-neighbour spacing, evenness CV 0.08). Edges near the headline/CTAs are dimmed by the same quiet-zone factor as particles (three tiers), so a click on text never draws over it.
 4. **Hold** ~1.2s. **Dissolve:** edges fade (~400ms), particles are released with a small outward impulse plus noise, independent motion ramps back over ~1s. **Resting state ≤ 3.5s after the click.** Dev-only assertion: 4s after the last event no particle is in a non-idle state.
 5. Max 2 concurrent clusters; a click during a hold replays the ripple and replaces the oldest cluster. Captured particles ignore the cursor halo while held.
 
 ### Modes
 | Mode | When | Behaviour |
 | --- | --- | --- |
-| **full** | fine pointer, width ≥ 768px | N = `clamp(area / 6000, 120, 280)`, cursor halo, click cluster, 30fps idle / 60fps interacting |
+| **full** | fine pointer, width ≥ 768px | N = `clamp(area / 5000, 120, 280)` (≈236 at 1440×820), cursor halo, click cluster, 30fps idle / 60fps interacting |
 | **lite** | coarse pointer or width < 768px | N ≈ 60–80, no hover halo, **tap** = ripple + small cluster (k = 1–2), links recomputed every 3rd frame, 30fps cap, DPR cap 1.5 |
-| **static** | `prefers-reduced-motion: reduce` (any device) | one seeded deterministic frame, faint links, **no RAF, no interaction** |
+| **static** | `prefers-reduced-motion: reduce` (any device) | the server-rendered poster only. **The engine is never downloaded**, no RAF, no interaction |
 
-No JS: server-rendered inline SVG/CSS poster in the same box (no layout shift). Static and lite use the same engine code path (`renderStaticFrame(seed)` for static, redrawn on debounced resize).
+The **poster** (`field-poster.tsx`, server component, 72 shapes + a few faint links) is rendered in the same box as the canvas: it is the whole experience with no JS or reduced motion, and the first frame for everyone else. It uses the same seeded layout as the engine (`layout.ts` is prefix-stable), so the canvas cross-fades in over identical positions. Rotation is dropped in the poster to keep the HTML small. Keep the home HTML under ~14 KB gzipped (first network round trip); measured 11.7 KB.
 
 ### Performance rules
 - Struct-of-arrays in `Float32Array`; **zero per-frame allocation**.
@@ -123,12 +124,14 @@ No JS: server-rendered inline SVG/CSS poster in the same box (no layout shift). 
 - Batch draws: quantise alpha into ~6 buckets, one path per bucket. No `shadowBlur`, no filters.
 - **DPR cap 2** (1.5 in lite, 1.5 above 2560px). Canvas sized to the hero only. `dt` clamped to 1/30.
 - **Hidden tab:** fully pause (cancel RAF) on `visibilitychange`; resume without a time jump. Also pause when the hero is off-screen (IntersectionObserver).
-- Adaptive quality: average frame > 20ms over 60 frames → cut N by 25% and disable links; never scale back up in the session.
-- Load after first paint: `dynamic(() => import(...), { ssr: false })` triggered by `requestIdleCallback` (fallback `setTimeout`); canvas fades in over 400ms. **LCP must be the headline text, never the canvas.** Engine ≤ 15KB gzipped incl. `simplex-noise`.
-- Dev overlay `?debug=field`: fps, N, active states.
+- Adaptive quality: average **step + draw time** > 8ms over 60 frames (after 90 warm-up frames) → cut N by 25% and disable ambient links; max twice, never scales back up in the session. (Work time, not frame interval, so the 30fps idle cap does not trigger it.) Measured work time: ~0.2ms in lite mode.
+- Load after first paint: `HeroField` (client) does a dynamic `import()` of the engine from an effect, triggered by `requestIdleCallback` (fallback `setTimeout`); the canvas cross-fades in over 500ms via a `data-live` attribute and Tailwind `group-data-[live=true]`. **LCP must be the headline text, never the canvas.** Engine ≤ 15KB gzipped incl. `simplex-noise`.
+- Debug: `?debug=field` draws an overlay (mode, N, fps, clusters, DPR, work time) and exposes `window.__field` (the simulation) for inspection. Not linked anywhere.
 
-### Engine layout (`src/components/hero/field/`)
-`config.ts` (all tunables) · `engine.ts` · `particles.ts` · `flow.ts` · `grid.ts` · `forces.ts` (halo, ripple, impulse) · `cluster.ts` (capture, spacing, k-NN edges, dissolve) · `render.ts` · `static.ts` · `use-field-mode.ts`. Pure modules (grid, cluster, springs) get Vitest tests when the engine starts.
+### Engine layout
+`src/components/hero/`: `hero-backdrop.tsx` (server: wrapper, masks, poster + canvas) · `field-poster.tsx` (server) · `hero-field.tsx` (client: mode, idle-load, owns the canvas).
+`src/components/hero/field/`: `config.ts` (all tunables) · `rng.ts` · `layout.ts` (seeded, shared by poster and engine) · `particles.ts` (SoA store) · `grid.ts` (spatial hash + nearest neighbours) · `cluster.ts` (capture, spacing forces, k-NN edges, timeline) · **`simulation.ts` (pure, no DOM: all behaviour)** · `render.ts` (batched canvas drawing) · `engine.ts` (DOM glue: sizing, DPR cap, pointer events, rAF loop, pause/resume, adaptive quality) · `use-field-mode.ts`.
+Tests (`npm test`, Vitest): layout determinism and prefix stability, grid vs brute force, and the simulation (halo gathers particles with a soft core, cluster evenness, rest within 3.5s of a click, cluster cap, lite limits).
 
 ---
 
@@ -159,7 +162,7 @@ No JS: server-rendered inline SVG/CSS poster in the same box (no layout shift). 
 ## 9. Performance
 
 - **Budgets** (mobile, throttled 4G, 4× CPU): LCP ≤ 1.5s · CLS ≤ 0.02 · INP ≤ 150ms · Lighthouse Performance ≥ 95; Accessibility / SEO / Best Practices 100.
-- First-load JS (modern browsers, excluding the `noModule` polyfill chunk): the React 19 + Next 16 floor is ~115 KB gz (react-dom ≈70, Next client ≈45), so the 90 KB budget I first wrote was unrealistic. **Measured after Phase 1: ≈148 KB gz** (app code ≈33). **Budget: ≤ 160 KB gz, ratchet only, never regress.** The async field chunk adds ≤ 15 KB. CSS ≤ 15 KB gz (now 7.8). Total page weight ≤ 500 KB with images. Re-measure after every phase (script: gzip each `<script src>` in `out/index.html`).
+- First-load JS (modern browsers, excluding the `noModule` polyfill chunk): the React 19 + Next 16 floor is ~115 KB gz (react-dom ≈70, Next client ≈45), so the 90 KB budget I first wrote was unrealistic. **Measured after Phase 1: ≈148 KB gz** (app code ≈33). **After Phase 2: still ≈148 KB** (the field adds a separate lazy engine chunk of **6.8 KB gz**, loaded after idle; CSS 6.9 KB). **Budget: ≤ 160 KB gz, ratchet only, never regress.** The async field chunk adds ≤ 15 KB. CSS ≤ 15 KB gz (now 7.8). Total page weight ≤ 500 KB with images. Re-measure after every phase (script: gzip each `<script src>` in `out/index.html`).
 - Server Components first; client components only where needed (`Header`, `WorkSwitcher`, `CopyEmailButton`, hero field). `LazyMotion` + `domAnimation`; no layout animations; `content-visibility: auto` below the fold; no third-party scripts except analytics (loaded after interaction/idle). Fonts: Geist, latin subset, `display: swap`, two families max.
 - Verify with `@next/bundle-analyzer` on demand and a throttled Chrome Performance run of the field.
 
@@ -195,14 +198,14 @@ Rules: Server Components by default; no barrel files; `@/` alias; case-study MDX
 - Files ≤ ~250 lines; comments explain *why*. Placeholder content is marked `TODO(owner)`.
 - No `setInterval` animation, no `shadowBlur`; always clean up listeners and observers.
 - No new dependency without asking.
-- Done = `npm run lint` and `npm run build` pass.
+- Done = `npm run lint`, `npm test` and `npm run build` pass.
 - Test reduced-motion, lite mode and keyboard access for anything interactive.
 
 ## 12. Roadmap (stop for owner review after each phase)
 
 - **P0 Scaffold** ✅
 - **P1 Foundations** ✅ done, awaiting owner review: tokens, header/footer, home (hero, Development/Design toggle with 4 + 3 rows, contact + work with me), `/work/[slug]` with 8-heading stubs for all 7 projects, `/about` and `/blogs` stubs, SEO baseline (metadata, per-page canonical, noindex on drafts, sitemap, robots, Person/WebSite JSON-LD). Lint + build pass; verified in the exported HTML. Not yet reviewed in a browser by Claude (no screenshot tool): owner reviews visually with `npm run dev`.
-- **P2 Particle field:** static frame → ambient → cursor halo → click ripple + cluster → lite mode → perf pass.
+- **P2 Particle field** ✅ done, awaiting owner review: server poster, pure simulation + tests, renderer, engine, full / lite / static modes, quiet zone, pause on hidden tab or off-screen, adaptive quality, `?debug=field`. Verified in headless Chromium (idle, hover halo, click ripple/cluster/dissolve, buttons ignored, pause/resume, reduced motion, mobile lite, no JS, 60fps, no console errors) and by reading screenshots.
 - **P3 Case-study system:** MDX components (Callout, Figure, Diagram, Decision, Metric), DRAKON (engineering) first, then DRAKON (design) with Figma + UX case study, then the rest.
 - **P4 About, Blogs, Resume.**
 - **P5 Analytics (D12), OG images, a11y audit, Lighthouse, deploy, cutover.**

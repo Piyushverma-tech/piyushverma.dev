@@ -9,7 +9,7 @@ import { cn } from "@/lib/cn";
 import { site, type NavItem } from "@/content/site";
 
 const linkClass =
-  "inline-flex items-center gap-1 text-sm text-fg-muted transition-colors hover:text-fg aria-[current=page]:text-fg";
+  "inline-flex items-center gap-1 text-sm sm:text-base text-fg-muted transition-colors hover:text-fg aria-[current=page]:text-fg";
 
 function NavLink({
   item,
@@ -69,8 +69,12 @@ export function Header() {
           className="flex items-baseline gap-3"
           onClick={() => setOpen(false)}
         >
-          <span className="text-sm font-semibold tracking-tight">{site.name}</span>
-          <span className="text-fg-muted hidden text-sm sm:inline">{site.role}</span>
+          <span className="text-sm font-semibold tracking-tight sm:text-base">
+            {site.name}
+          </span>
+          <span className="text-fg-muted hidden text-sm sm:inline sm:text-base">
+            {site.role}
+          </span>
         </Link>
 
         <nav aria-label="Primary" className="hidden items-center gap-7 md:flex">

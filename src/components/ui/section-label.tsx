@@ -12,7 +12,7 @@ export function SectionLabel({
 }) {
   return (
     <div className="flex items-center gap-5">
-      <h2 id={id} className="text-fg-muted text-sm">
+      <h2 id={id} className="text-fg-muted text-sm sm:text-base">
         {children}
       </h2>
       <div aria-hidden className="bg-line h-px flex-1" />

@@ -17,11 +17,7 @@ function List({ discipline }: { discipline: Discipline }) {
 
 export function SelectedWork() {
   return (
-    <section
-      id="work"
-      aria-labelledby="work-heading"
-      className="scroll-mt-20 py-24 sm:py-32"
-    >
+    <section id="work" aria-labelledby="work-heading" className="scroll-mt-20 py-24">
       <Container>
         <WorkSwitcher
           development={<List discipline="development" />}
