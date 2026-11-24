@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { CLUSTER_HUES, FIELD } from "./config";
 import { FieldSimulation, TIMELINE } from "./simulation";
 
 const DT = 1 / 60;
@@ -132,5 +133,92 @@ describe("click: ripple, cluster, dissolve", () => {
     run(sim, 1);
     sim.click(200, 300);
     expect(sim.clusters[0]?.members.length ?? 0).toBeLessThanOrEqual(16);
+  });
+});
+
+describe("charge pulses", () => {
+  it("fire at random while floating, then decay back to nothing", () => {
+    const sim = new FieldSimulation("full", W, H);
+    run(sim, 8);
+    let lit = 0;
+    let maxLit = 0;
+    for (let s = 0; s < 60 * 10; s++) {
+      sim.step(DT);
+      lit = 0;
+      for (let i = 0; i < sim.n; i++) if (sim.p.pulse[i] > 0.12) lit++;
+      maxLit = Math.max(maxLit, lit);
+    }
+    // alive, but never more than a small share of the field at once
+    expect(maxLit).toBeGreaterThan(0);
+    expect(maxLit).toBeLessThan(sim.n * 0.25);
+    for (let i = 0; i < sim.n; i++) {
+      expect(sim.p.pulse[i]).toBeGreaterThanOrEqual(0);
+      expect(sim.p.pulse[i]).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it("are not synchronised: pulse times are spread across particles", () => {
+    const sim = new FieldSimulation("full", W, H);
+    const times = Array.from(sim.p.pulseAt.slice(0, sim.n)).sort((a, b) => a - b);
+    expect(
+      times[Math.floor(times.length * 0.9)] - times[Math.floor(times.length * 0.1)],
+    ).toBeGreaterThan(FIELD.pulse.gapMax * 0.4);
+  });
+
+  it("do not count as activity: the field still reaches rest", () => {
+    const sim = new FieldSimulation("full", W, H);
+    run(sim, 20);
+    expect(sim.isAtRest()).toBe(true);
+  });
+});
+
+describe("cluster colour", () => {
+  const clickAndGetHue = (sim: FieldSimulation, x: number, y: number) => {
+    sim.click(x, y);
+    return sim.clusters[sim.clusters.length - 1].hue;
+  };
+
+  it("never repeats back to back, and deals every hue before any repeats", () => {
+    const sim = new FieldSimulation("full", W, H);
+    run(sim, 3);
+    const hues: number[] = [];
+    for (let k = 0; k < CLUSTER_HUES.length * 3; k++) {
+      hues.push(clickAndGetHue(sim, 700, 400));
+      run(sim, 4);
+    }
+    for (let k = 1; k < hues.length; k++) expect(hues[k]).not.toBe(hues[k - 1]);
+    for (let b = 0; b < 3; b++) {
+      const bag = hues.slice(b * CLUSTER_HUES.length, (b + 1) * CLUSTER_HUES.length);
+      expect(new Set(bag).size).toBe(CLUSTER_HUES.length);
+    }
+  });
+
+  it("turns members to the hue while held, then returns every particle to its own colour", () => {
+    const sim = new FieldSimulation("full", W, H);
+    run(sim, 3);
+    sim.click(700, 400);
+    const c = sim.clusters[0];
+    run(sim, TIMELINE.release - 0.2);
+    let tinted = 0;
+    for (let a = 0; a < c.members.length; a++) {
+      const i = c.members[a];
+      expect(sim.p.hue[i]).toBe(c.hue);
+      if (sim.p.tint[i] > 0.9) tinted++;
+    }
+    expect(tinted).toBeGreaterThan(c.members.length * 0.9);
+
+    run(sim, 3.5);
+    for (let i = 0; i < sim.n; i++) expect(sim.p.tint[i]).toBeLessThan(0.03);
+    expect(sim.isAtRest()).toBe(true);
+  });
+
+  it("only particles in a structure are tinted", () => {
+    const sim = new FieldSimulation("full", W, H);
+    run(sim, 3);
+    sim.click(700, 400);
+    run(sim, 1.5);
+    let tinted = 0;
+    for (let i = 0; i < sim.n; i++) if (sim.p.tint[i] > 0.05) tinted++;
+    expect(tinted).toBe(sim.clusters[0].members.length);
   });
 });

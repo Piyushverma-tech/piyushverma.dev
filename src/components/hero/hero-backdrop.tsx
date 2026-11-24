@@ -4,7 +4,7 @@ import { HeroField } from "./hero-field";
 // The bottom of the field fades out so it never bleeds into "Selected work".
 const FADE_BOTTOM = "linear-gradient(to bottom, #000 62%, transparent 100%)";
 // The poster is dimmer on the headline side, like the live field's quiet zone.
-const QUIET_LEFT = "linear-gradient(90deg, rgb(0 0 0 / 0.3) 0%, #000 55%)";
+const QUIET_LEFT = "linear-gradient(90deg, rgb(0 0 0 / 0.55) 0%, #000 40%)";
 
 /**
  * Hero background. Server component: the poster is plain HTML (no client payload copy),

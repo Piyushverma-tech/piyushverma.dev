@@ -31,6 +31,7 @@
 | D10 | No location on the site. |
 | D11 | "Work with me" copy is placeholder written by Claude; the owner rewrites it later. All site copy lives in `src/content/site.ts` so it is one file to edit. |
 | D12 | **Open:** analytics for case-study opens and email copies (section 7). |
+| D14 | **Cluster hues (owner request, 2026-11-24):** each click turns its structure into one colour from a small muted palette (`CLUSTER_HUES` in `field/config.ts`), then it returns to the particles' own grey/cyan. Replaces the earlier "grey and cyan only" rule for clusters. Ambient particles stay grey/cyan; no rainbow gradients, no glow. |
 | D13 | The site only goes live when complete, so placeholder copy and the empty Blogs nav link are intentional until then (nothing is hidden or hardened for launch yet). |
 
 ## 3. Stack
@@ -84,7 +85,7 @@
 --color-accent      #62B7C8     (muted cyan, ≈ 8:1 on bg; links, focus ring, field highlights)
 ```
 - **Contrast rule:** any meaningful text must reach **4.5:1** (3:1 only for WCAG large text: ≥24px, or ≥18.66px bold). `fg-subtle` is for decorative elements only (e.g. big placeholder monograms). Check any new color pair before using it.
-- Particle palette (Phase 2): tiny **grey** and **muted cyan** only. No orange, no rainbow, no gradients (except the hero's bottom fade mask), no glow (`shadowBlur`, `drop-shadow`, glow shadows banned).
+- Particle palette (Phase 2): resting particles are tiny **grey** and **muted cyan**. A click's structure temporarily takes one hue from the six-colour `CLUSTER_HUES` palette (amber, violet, rose, mint, blue, lime; muted, similar lightness; D14). No rainbow or colour gradients (except the hero's bottom fade mask), no glow (`shadowBlur`, `drop-shadow`, glow shadows banned).
 - **Type:** Geist Sans + Geist Mono via `next/font`. Hero `clamp(2.5rem, 6.2vw, 4.75rem)`, weight 600, tracking −0.03em. Mono for chips and periods.
 - **Layout:** container max 1120px, 8px grid, section spacing ~128px desktop / 96px mobile.
 - **Motion:** `transform` and `opacity` only, 200–400ms, ease `cubic-bezier(.22,1,.36,1)`, reveal once; `MotionConfig reducedMotion="user"`.
@@ -97,22 +98,24 @@
 **Concept:** scattered information → temporary order. The loop: **01 Ambient** (scattered particles drifting independently) → **02 Cursor influence** (particles gather and circulate around the pointer) → **03 Click** (a ripple travels outward and rearranges the surroundings) → **04 Structure** (nearby particles briefly connect into a cluster, then disperse). Premium, not gimmicky. Idle is quiet. **Nothing persists.**
 
 ### Visual rules
-- Dark field. Tiny particles: ~70% grey, ~30% muted cyan. Idle alpha 0.10–0.28. Connection alpha `(1 − d/96)² × 0.08`, max 2 links per particle. No shadows, glow or blur.
+- Dark field. Tiny particles: ~70% grey, ~30% muted cyan. Idle alpha 0.20–0.50 (`ALPHA` in config, shared by layout, poster and tests). Connection alpha `(1 − d/170)² × 0.16`, max 2 links per particle. No shadows, glow or blur.
 - Mix: ~50% dots (r 1–2px), ~30% squares (3–5px, slow rotation), ~15% line ticks (6–10px), ~5% plus fragments.
-- **Quiet zone:** alpha ×0.25 behind the headline and CTAs; density weighted to the right 60%; bottom edge fades out via CSS `mask-image` so the field never bleeds into "Selected work".
+- **Quiet zone:** alpha ×0.3 behind the headline, intro and CTAs. Each of the three elements carries its own `data-field-quiet` and is `w-fit`, so the zone hugs the text (a 60rem wrapper left a dead rectangle beside the headline). Density weighted to the right 60%; the poster's CSS mask dims only the far left; bottom edge fades out via CSS `mask-image` so the field never bleeds into "Selected work".
 - Scoped to the **hero section only**. Clicks on `a, button, input, [data-no-field]` are ignored.
 
 ### Behaviour
 1. **Ambient:** slow simplex flow field (4–12 px/s), per-particle depth factor 0.4–1, soft-edge wrap.
 2. **Cursor halo** (`outer = 200px`, `core = 84px`): outer band = gentle magnetic **attraction**; core = soft **repulsion**, so particles settle into an orbit-like ring ~60–65px out rather than collapsing. Add a small tangential (swirl) force with a random ±1 direction per particle so particles circulate and keep **exchanging positions** (swirl 90: ≈44 px/s, one lap ≈9s, ~50% of particle pairs swap angular order every 2s). Independent noise stays on (particles never lock). Strength ramps in/out over ~500ms on pointer enter/leave. Links within the halo get a smooth brightness boost (×2 at most).
-3. **Click:** a thin 1px ripple ring expands (~520px/s, ~700ms, alpha .3 → 0) and nudges particles in the wavefront radially. At the same moment a **short-lived attractive impulse** (~250ms, decaying) pulls particles within ~240px inward. The K nearest (≤ 36 desktop, ≤ 16 lite) are captured, held with short-range mutual repulsion so they settle at **even spacing**, and connected to their **2–3 nearest neighbours** (found with the spatial grid). Edges fade in (~250ms, alpha ≤ 0.35). That evenly spaced, connected cluster is the "temporary order" (measured: 36 members, ~26px nearest-neighbour spacing, evenness CV 0.08). Edges near the headline/CTAs are dimmed by the same quiet-zone factor as particles (three tiers), so a click on text never draws over it.
-4. **Hold** ~1.2s. **Dissolve:** edges fade (~400ms), particles are released with a small outward impulse plus noise, independent motion ramps back over ~1s. **Resting state ≤ 3.5s after the click.** Dev-only assertion: 4s after the last event no particle is in a non-idle state.
-5. Max 2 concurrent clusters; a click during a hold replays the ripple and replaces the oldest cluster. Captured particles ignore the cursor halo while held.
+3. **Click:** a thin 1px ripple ring expands (~520px/s, ~700ms, alpha .3 → 0) and nudges particles in the wavefront radially. At the same moment a **short-lived attractive impulse** (~250ms, decaying) pulls particles within ~240px inward. The K nearest (≤ 36 desktop, ≤ 16 lite) are captured, held with short-range mutual repulsion so they settle at **even spacing**, and connected to their **2–3 nearest neighbours** (found with the spatial grid). Edges fade in (~250ms, alpha ≤ 0.45). That evenly spaced, connected cluster is the "temporary order" (measured: 36 members, ~26px nearest-neighbour spacing, evenness CV 0.08). Edges near the headline/CTAs are dimmed by the same quiet-zone factor as particles (three tiers), so a click on text never draws over it.
+   **Colour:** every click picks a hue from `CLUSTER_HUES`, dealt from a shuffled bag (all six appear before any repeats; never the same twice in a row). Members cross-fade from their own colour to the hue while the structure forms (~0.2s time constant, done by ~0.6s); edges and the ripple ring use the hue. Cross-fading is per-particle drawing for the few cluster members only.
+4. **Hold** ~1.2s. **Dissolve:** edges fade (~400ms), particles are released with a small outward impulse plus noise, independent motion ramps back over ~1s and the hue fades back to each particle's own colour (0.3s time constant, back to nothing by ~3.3s).  **Resting state ≤ 3.5s after the click.** Dev-only assertion: 4s after the last event no particle is in a non-idle state.
+5. **Charge pulses (ambient):** every particle pulses at random, once every 5–20s (first pulse spread over the first 20s so nothing starts in sync). A pulse jumps to full intensity and decays over ~0.5s: the particle gets brighter, ~1.8× larger and a brighter cyan overlay, and its links brighten. 35% of pulses hop to a linked neighbour ~0.16s later, so a signal sometimes travels along a link. Brightness and size only, no glow. Pulses use their own RNG stream, are not "activity" (they never block the rest state) and keep running inside clusters.
+6. Max 2 concurrent clusters; a click during a hold replays the ripple and replaces the oldest cluster. Captured particles ignore the cursor halo while held.
 
 ### Modes
 | Mode | When | Behaviour |
 | --- | --- | --- |
-| **full** | fine pointer, width ≥ 768px | N = `clamp(area / 5000, 120, 280)` (≈236 at 1440×820), cursor halo, click cluster, 30fps idle / 60fps interacting |
+| **full** | fine pointer, width ≥ 768px | N = `clamp(area / 2000, 140, 560)` (≈560 at 1920×700; ≈441 at 1520×580; the hero is capped at 580px tall. A previous max of 280 silently overrode the density setting), cursor halo, click cluster, 30fps idle / 60fps interacting |
 | **lite** | coarse pointer or width < 768px | N ≈ 60–80, no hover halo, **tap** = ripple + small cluster (k = 1–2), links recomputed every 3rd frame, 30fps cap, DPR cap 1.5 |
 | **static** | `prefers-reduced-motion: reduce` (any device) | the server-rendered poster only. **The engine is never downloaded**, no RAF, no interaction |
 
@@ -206,6 +209,7 @@ Rules: Server Components by default; no barrel files; `@/` alias; case-study MDX
 - **P0 Scaffold** ✅
 - **P1 Foundations** ✅ done, awaiting owner review: tokens, header/footer, home (hero, Development/Design toggle with 4 + 3 rows, contact + work with me), `/work/[slug]` with 8-heading stubs for all 7 projects, `/about` and `/blogs` stubs, SEO baseline (metadata, per-page canonical, noindex on drafts, sitemap, robots, Person/WebSite JSON-LD). Lint + build pass; verified in the exported HTML. Not yet reviewed in a browser by Claude (no screenshot tool): owner reviews visually with `npm run dev`.
 - **P2 Particle field** ✅ done, awaiting owner review: server poster, pure simulation + tests, renderer, engine, full / lite / static modes, quiet zone, pause on hidden tab or off-screen, adaptive quality, `?debug=field`. Verified in headless Chromium (idle, hover halo, click ripple/cluster/dissolve, buttons ignored, pause/resume, reduced motion, mobile lite, no JS, 60fps, no console errors) and by reading screenshots.
+  - **P2.1 (owner feedback, 2026-11-24):** denser, brighter field (the `max` clamp was hiding the density setting; resting alpha and link alpha raised), quiet zones tightened to the text, charge pulses, per-click cluster hues (D14). Checked headlessly (real simulation + renderer on a node canvas) and by unit tests; **not yet seen in a real browser.**
 - **P3 Case-study system:** MDX components (Callout, Figure, Diagram, Decision, Metric), DRAKON (engineering) first, then DRAKON (design) with Figma + UX case study, then the rest.
 - **P4 About, Blogs, Resume.**
 - **P5 Analytics (D12), OG images, a11y audit, Lighthouse, deploy, cutover.**

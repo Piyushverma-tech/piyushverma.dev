@@ -1,4 +1,4 @@
-import { COLOR, FIELD_SEED, POSTER_COUNT } from "./field/config";
+import { ALPHA, COLOR, FIELD_SEED, POSTER_COUNT } from "./field/config";
 import { SHAPE, generateLayout } from "./field/layout";
 
 // Links are computed once at build time for an assumed 1440x800 hero. They are faint
@@ -11,11 +11,14 @@ const pct = (v: number) => `${(v * 100).toFixed(1)}%`;
 
 // Shapes are grouped by (colour, opacity tier) so each element carries only its
 // geometry. That keeps the markup small, and it is serialised twice (HTML + RSC payload).
-const TIERS = [0.12, 0.17, 0.22, 0.27];
+// Tier opacities sit at the middle of each slice of the live field's resting alpha range.
+const TIERS = [0, 1, 2, 3].map(
+  (k) => +(ALPHA.min + (ALPHA.span * (k + 0.5)) / 4).toFixed(3),
+);
 const tierOf = (alpha: number) =>
   Math.min(
     TIERS.length - 1,
-    Math.max(0, Math.floor(((alpha - 0.1) / 0.18) * TIERS.length)),
+    Math.max(0, Math.floor(((alpha - ALPHA.min) / ALPHA.span) * TIERS.length)),
   );
 
 /**
@@ -55,7 +58,7 @@ export function FieldPoster() {
       className="absolute inset-0 h-full w-full"
     >
       {[0, 1].map((t) => (
-        <g key={`l${t}`} stroke={COLOR.link} strokeOpacity={t === 1 ? 0.12 : 0.06}>
+        <g key={`l${t}`} stroke={COLOR.link} strokeOpacity={t === 1 ? 0.2 : 0.1}>
           {links
             .filter((l) => l.t === t)
             .map((l) => (

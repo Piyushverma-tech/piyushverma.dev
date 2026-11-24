@@ -15,6 +15,8 @@ export type Cluster = {
   cx: number;
   cy: number;
   t0: number;
+  /** CLUSTER_HUES index this structure turns into */
+  hue: number;
   members: Int32Array;
   ax: Float32Array;
   ay: Float32Array;
@@ -35,6 +37,7 @@ export function captureCluster(
   time: number,
   maxMembers: number,
   neighbours: number,
+  hue: number,
 ): Cluster | null {
   const r2 = CL.captureRadius * CL.captureRadius;
   const cand: { i: number; d: number }[] = [];
@@ -52,11 +55,13 @@ export function captureCluster(
   for (let a = 0; a < m; a++) {
     members[a] = cand[a].i;
     p.state[cand[a].i] = 1;
+    p.hue[cand[a].i] = hue;
   }
   return {
     cx,
     cy,
     t0: time,
+    hue,
     members,
     ax: new Float32Array(m),
     ay: new Float32Array(m),
@@ -113,6 +118,9 @@ export function stepCluster(c: Cluster, p: Particles, age: number, dt: number) {
 
   const boostTarget = CL.nodeBoost * smoothstep(0.2, 0.6, age);
   const boostK = 1 - Math.exp(-dt / 0.25);
+  // Colour turns over while the structure forms, so it reads as one thing changing.
+  const tintTarget = smoothstep(0.05, 0.5, age);
+  const tintK = 1 - Math.exp(-dt / FIELD.tintAttack);
   for (let a = 0; a < m; a++) {
     const i = c.members[a];
     p.vx[i] += c.ax[a] * dt;
@@ -120,6 +128,7 @@ export function stepCluster(c: Cluster, p: Particles, age: number, dt: number) {
     p.x[i] += p.vx[i] * dt;
     p.y[i] += p.vy[i] * dt;
     p.boost[i] += (boostTarget - p.boost[i]) * boostK;
+    p.tint[i] += (tintTarget - p.tint[i]) * tintK;
     p.rot[i] += p.spin[i] * dt;
   }
 }

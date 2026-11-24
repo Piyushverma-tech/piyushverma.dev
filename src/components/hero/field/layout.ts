@@ -1,3 +1,4 @@
+import { ALPHA } from "./config";
 import { mulberry32, smoothstep } from "./rng";
 
 export const SHAPE = { dot: 0, square: 1, tick: 2, plus: 3 } as const;
@@ -59,7 +60,7 @@ export function generateLayout(count: number, seed: number): Layout {
           : shape === SHAPE.tick
             ? 3 + 2 * r()
             : 2 + r();
-    L.alpha[i] = 0.1 + 0.18 * r();
+    L.alpha[i] = ALPHA.min + ALPHA.span * r();
     L.rot[i] = r() * Math.PI;
     L.depth[i] = 0.4 + 0.6 * r();
   }

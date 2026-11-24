@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FIELD_SEED } from "./config";
+import { ALPHA, FIELD_SEED } from "./config";
 import { generateLayout } from "./layout";
 
 describe("generateLayout", () => {
@@ -21,8 +21,8 @@ describe("generateLayout", () => {
     for (let i = 0; i < L.count; i++) {
       expect(L.nx[i]).toBeGreaterThanOrEqual(0);
       expect(L.nx[i]).toBeLessThanOrEqual(1);
-      expect(L.alpha[i]).toBeGreaterThanOrEqual(0.1);
-      expect(L.alpha[i]).toBeLessThanOrEqual(0.28);
+      expect(L.alpha[i]).toBeGreaterThanOrEqual(ALPHA.min);
+      expect(L.alpha[i]).toBeLessThanOrEqual(ALPHA.min + ALPHA.span);
       cyan += L.color[i];
       if (L.nx[i] > 0.5) right++;
     }

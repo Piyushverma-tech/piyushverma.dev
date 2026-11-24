@@ -1,5 +1,6 @@
 import { createNoise3D, type NoiseFunction3D } from "simplex-noise";
 import {
+  CLUSTER_HUES,
   FIELD,
   FIELD_SEED,
   MODES,
@@ -21,7 +22,7 @@ import { createParticles, type Particles } from "./particles";
 import { mulberry32, smoothstep } from "./rng";
 
 export type Rect = { x: number; y: number; w: number; h: number };
-export type Ripple = { x: number; y: number; t0: number };
+export type Ripple = { x: number; y: number; t0: number; hue: number };
 export type Pointer = {
   x: number;
   y: number;
@@ -36,6 +37,7 @@ const HA = FIELD.halo;
 const RI = FIELD.ripple;
 const PU = FIELD.pull;
 const CL = FIELD.cluster;
+const PL = FIELD.pulse;
 
 /**
  * The whole behaviour of the field, with no DOM access: fully deterministic, so it can
@@ -65,6 +67,11 @@ export class FieldSimulation {
 
   private noise: NoiseFunction3D = createNoise3D(mulberry32(FIELD_SEED ^ 0x9e37));
   private rng = mulberry32(FIELD_SEED + 7);
+  // Separate streams, so adding pulses or colours never changes the other behaviours.
+  private pulseRng = mulberry32(FIELD_SEED + 101);
+  private hueRng = mulberry32(FIELD_SEED + 211);
+  private hueBag: number[] = [];
+  private lastHue = -1;
 
   constructor(mode: LiveMode, w: number, h: number) {
     this.mode = mode;
@@ -78,6 +85,7 @@ export class FieldSimulation {
     this.h = h;
     const total = particleCount(this.mode, w, h);
     this.rng = mulberry32(FIELD_SEED + 7);
+    this.pulseRng = mulberry32(FIELD_SEED + 101);
     this.p = createParticles(generateLayout(total, FIELD_SEED), total, w, h, this.rng);
     this.n = total;
     this.grid.resize(w, h, total);
@@ -113,7 +121,8 @@ export class FieldSimulation {
   /** Ripple, short attractive impulse, then a connected cluster that dissolves again. */
   click(x: number, y: number) {
     this.lastEvent = this.time;
-    this.ripples.push({ x, y, t0: this.time });
+    const hue = this.nextHue();
+    this.ripples.push({ x, y, t0: this.time, hue });
     if (this.ripples.length > RI.max) this.ripples.shift();
 
     let live = 0;
@@ -133,8 +142,42 @@ export class FieldSimulation {
       this.time,
       this.cfg.clusterMax,
       this.cfg.neighbours,
+      hue,
     );
     if (c) this.clusters.push(c);
+  }
+
+  /**
+   * Hues are dealt from a shuffled bag, so every colour shows up before any repeats and
+   * two clicks in a row never match (a random pick would repeat about one time in six).
+   */
+  private nextHue(): number {
+    if (this.hueBag.length === 0) {
+      const bag = CLUSTER_HUES.map((_, i) => i);
+      for (let i = bag.length - 1; i > 0; i--) {
+        const j = Math.floor(this.hueRng() * (i + 1));
+        [bag[i], bag[j]] = [bag[j], bag[i]];
+      }
+      // the next card dealt is bag[last]; keep it different from the previous click
+      if (bag[bag.length - 1] === this.lastHue) bag.unshift(bag.pop()!);
+      this.hueBag = bag;
+    }
+    this.lastHue = this.hueBag.pop()!;
+    return this.lastHue;
+  }
+
+  /** A particle flashes; sometimes the pulse hops to a linked neighbour. */
+  private firePulse(i: number, t: number) {
+    const { p, n, nn } = this;
+    const r = this.pulseRng;
+    p.pulse[i] = PL.peakMin + (1 - PL.peakMin) * r();
+    p.pulseAt[i] = t + PL.gapMin + (PL.gapMax - PL.gapMin) * r();
+    if (!this.linksEnabled || r() >= PL.chain) return;
+    const k = this.cfg.linkMax;
+    const j = nn[i * k + Math.floor(r() * k)];
+    if (j < 0 || j >= n || p.pulse[j] > 0.15) return;
+    const at = t + PL.chainDelay * (0.7 + 0.6 * r());
+    if (p.pulseAt[j] > at) p.pulseAt[j] = at;
   }
 
   /** Adaptive quality: fewer particles, no ambient links. Never scales back up. */
@@ -174,7 +217,13 @@ export class FieldSimulation {
     if (this.clusters.length || this.ripples.length) return false;
     const p = this.p;
     for (let i = 0; i < this.n; i++) {
-      if (p.state[i] !== 0 || p.free[i] < 1 || p.flash[i] > 0.02 || p.boost[i] > 0.02)
+      if (
+        p.state[i] !== 0 ||
+        p.free[i] < 1 ||
+        p.flash[i] > 0.02 ||
+        p.boost[i] > 0.02 ||
+        p.tint[i] > 0.03
+      )
         return false;
     }
     return true;
@@ -203,13 +252,19 @@ export class FieldSimulation {
     const R2 = HA.outer * HA.outer;
     const flashK = Math.exp(-dt / FIELD.flashDecay);
     const boostK = Math.exp(-dt / FIELD.boostDecay);
+    const pulseK = Math.exp(-dt / PL.decay);
+    const tintK = Math.exp(-dt / FIELD.tintDecay);
     const nR = this.ripples.length;
     const nC = this.clusters.length;
 
     for (let i = 0; i < n; i++) {
       p.flash[i] *= flashK;
+      // Pulses run for everyone, captured or not: ambient life, not an "event".
+      p.pulse[i] *= pulseK;
+      if (t >= p.pulseAt[i]) this.firePulse(i, t);
       if (p.state[i] === 1) continue;
       p.boost[i] *= boostK;
+      p.tint[i] *= tintK;
       if (p.free[i] < 1) p.free[i] = Math.min(1, p.free[i] + dt / FIELD.freeRamp);
 
       const x = p.x[i];

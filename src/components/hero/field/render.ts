@@ -1,15 +1,20 @@
-import { COLOR, FIELD } from "./config";
+import { CLUSTER_HUES, COLOR, FIELD } from "./config";
 import { clusterEdgeAlpha, computeEdges } from "./cluster";
 import { SHAPE } from "./layout";
+import type { Particles } from "./particles";
 import type { FieldSimulation } from "./simulation";
 
 const TAU = Math.PI * 2;
 const CL = FIELD.cluster;
 const RI = FIELD.ripple;
 const HA = FIELD.halo;
+const PL = FIELD.pulse;
+/** below this a particle counts as untinted (keep in step with the simulation's rest test) */
+const TINT_MIN = 0.01;
 
 // Reused between frames so drawing allocates nothing.
 let linkBucket = new Int8Array(0);
+let glowBucket = new Int8Array(0);
 
 /**
  * Everything is batched: one path per (colour, alpha bucket) instead of one draw call
@@ -34,18 +39,89 @@ export function render(
   }
 }
 
+const filled = (sh: number) => sh === SHAPE.dot || sh === SHAPE.square;
+
+/** Appends one particle's shape to the current path, scaled for its pulse. */
+function trace(ctx: CanvasRenderingContext2D, p: Particles, i: number) {
+  const x = p.x[i];
+  const y = p.y[i];
+  const s = p.size[i] * (1 + p.pulse[i] * PL.grow);
+  const sh = p.shape[i];
+  if (sh === SHAPE.dot) {
+    ctx.moveTo(x + s, y);
+    ctx.arc(x, y, s, 0, TAU);
+    return;
+  }
+  const co = Math.cos(p.rot[i]) * s;
+  const si = Math.sin(p.rot[i]) * s;
+  if (sh === SHAPE.square) {
+    ctx.moveTo(x - co + si, y - si - co);
+    ctx.lineTo(x + co + si, y + si - co);
+    ctx.lineTo(x + co - si, y + si + co);
+    ctx.lineTo(x - co - si, y - si + co);
+    ctx.closePath();
+    return;
+  }
+  ctx.moveTo(x - co, y - si);
+  ctx.lineTo(x + co, y + si);
+  if (sh === SHAPE.plus) {
+    ctx.moveTo(x + si, y - co);
+    ctx.lineTo(x - si, y + co);
+  }
+}
+
+/** One fill path and one stroke path for every particle in `bucket[i] === b`. */
+function drawBatch(
+  ctx: CanvasRenderingContext2D,
+  p: Particles,
+  n: number,
+  bucket: Int8Array,
+  b: number,
+  colors: Uint8Array | null,
+  c: number,
+) {
+  for (let pass = 0; pass < 2; pass++) {
+    const fill = pass === 0;
+    let any = false;
+    ctx.beginPath();
+    for (let i = 0; i < n; i++) {
+      if (bucket[i] !== b || (colors && colors[i] !== c)) continue;
+      if (filled(p.shape[i]) !== fill) continue;
+      trace(ctx, p, i);
+      any = true;
+    }
+    if (!any) continue;
+    if (fill) ctx.fill();
+    else ctx.stroke();
+  }
+}
+
 function drawParticles(ctx: CanvasRenderingContext2D, sim: FieldSimulation) {
   const { p, n, w, h } = sim;
   const B = FIELD.alphaBuckets;
   const maxA = FIELD.maxAlpha;
   const fade = FIELD.edgeFade;
+  const GB = PL.overlayBuckets;
+  if (glowBucket.length < n) glowBucket = new Int8Array(n);
 
   for (let i = 0; i < n; i++) {
     const x = p.x[i];
     const y = p.y[i];
     const edge = Math.min(1, Math.max(0, Math.min(x, w - x, y, h - y) / fade));
-    const a = (p.alpha[i] + p.flash[i] + p.boost[i]) * sim.quietAt(x, y) * edge;
+    const q = sim.quietAt(x, y) * edge;
+    const pu = p.pulse[i];
+    glowBucket[i] = -1;
+    // particles mid-way to a cluster hue are drawn one by one in drawTinted
+    if (p.tint[i] > TINT_MIN) {
+      p.bucket[i] = -1;
+      continue;
+    }
+    const a = (p.alpha[i] + p.flash[i] + p.boost[i] + pu * PL.alpha) * q;
     p.bucket[i] = a < 0.02 ? -1 : Math.min(B - 1, Math.floor((a / maxA) * B));
+    if (pu > PL.overlayMin) {
+      const g = pu * q;
+      glowBucket[i] = g < 0.03 ? -1 : Math.min(GB - 1, Math.floor(g * GB));
+    }
   }
 
   for (let c = 0; c < 2; c++) {
@@ -54,53 +130,59 @@ function drawParticles(ctx: CanvasRenderingContext2D, sim: FieldSimulation) {
     ctx.strokeStyle = col;
     for (let b = 0; b < B; b++) {
       ctx.globalAlpha = ((b + 1) / B) * maxA;
+      drawBatch(ctx, p, n, p.bucket, b, p.color, c);
+    }
+  }
 
-      // dots and squares: filled
-      let any = false;
-      ctx.beginPath();
-      for (let i = 0; i < n; i++) {
-        if (p.bucket[i] !== b || p.color[i] !== c) continue;
-        const x = p.x[i];
-        const y = p.y[i];
-        const s = p.size[i];
-        if (p.shape[i] === SHAPE.dot) {
-          ctx.moveTo(x + s, y);
-          ctx.arc(x, y, s, 0, TAU);
-          any = true;
-        } else if (p.shape[i] === SHAPE.square) {
-          const co = Math.cos(p.rot[i]) * s;
-          const si = Math.sin(p.rot[i]) * s;
-          ctx.moveTo(x - co + si, y - si - co);
-          ctx.lineTo(x + co + si, y + si - co);
-          ctx.lineTo(x + co - si, y + si + co);
-          ctx.lineTo(x - co - si, y - si + co);
-          ctx.closePath();
-          any = true;
-        }
-      }
-      if (any) ctx.fill();
+  // The "charge": a brighter cyan copy over particles that are pulsing right now.
+  ctx.fillStyle = COLOR.pulse;
+  ctx.strokeStyle = COLOR.pulse;
+  for (let b = 0; b < GB; b++) {
+    ctx.globalAlpha = ((b + 1) / GB) * PL.overlay;
+    drawBatch(ctx, p, n, glowBucket, b, null, 0);
+  }
 
-      // ticks and plus marks: stroked
-      any = false;
+  drawTinted(ctx, sim);
+}
+
+/**
+ * Particles in (or just out of) a cluster cross-fade from their own colour to the
+ * cluster's hue. Only the few dozen cluster members, so one draw each is fine.
+ */
+function drawTinted(ctx: CanvasRenderingContext2D, sim: FieldSimulation) {
+  const { p, n, w, h } = sim;
+  const maxA = FIELD.maxAlpha;
+  const fade = FIELD.edgeFade;
+  for (let i = 0; i < n; i++) {
+    const t = p.tint[i];
+    if (t <= TINT_MIN) continue;
+    const x = p.x[i];
+    const y = p.y[i];
+    const edge = Math.min(1, Math.max(0, Math.min(x, w - x, y, h - y) / fade));
+    const a = Math.min(
+      maxA,
+      (p.alpha[i] + p.flash[i] + p.boost[i] + p.pulse[i] * PL.alpha) *
+        sim.quietAt(x, y) *
+        edge,
+    );
+    if (a < 0.02) continue;
+    const fill = filled(p.shape[i]);
+    for (let layer = 0; layer < 2; layer++) {
+      const amount = layer === 0 ? 1 - t : t;
+      if (amount * a < 0.015) continue;
+      const col =
+        layer === 0
+          ? p.color[i] === 1
+            ? COLOR.cyan
+            : COLOR.grey
+          : CLUSTER_HUES[p.hue[i]];
+      ctx.globalAlpha = amount * a;
+      ctx.fillStyle = col;
+      ctx.strokeStyle = col;
       ctx.beginPath();
-      for (let i = 0; i < n; i++) {
-        if (p.bucket[i] !== b || p.color[i] !== c) continue;
-        const sh = p.shape[i];
-        if (sh !== SHAPE.tick && sh !== SHAPE.plus) continue;
-        const x = p.x[i];
-        const y = p.y[i];
-        const s = p.size[i];
-        const co = Math.cos(p.rot[i]) * s;
-        const si = Math.sin(p.rot[i]) * s;
-        ctx.moveTo(x - co, y - si);
-        ctx.lineTo(x + co, y + si);
-        if (sh === SHAPE.plus) {
-          ctx.moveTo(x + si, y - co);
-          ctx.lineTo(x - si, y + co);
-        }
-        any = true;
-      }
-      if (any) ctx.stroke();
+      trace(ctx, p, i);
+      if (fill) ctx.fill();
+      else ctx.stroke();
     }
   }
 }
@@ -133,6 +215,7 @@ function drawLinks(ctx: CanvasRenderingContext2D, sim: FieldSimulation) {
       const mx = p.x[i] + dx / 2;
       const my = p.y[i] + dy / 2;
       let a = (1 - d / dist) * (1 - d / dist) * FIELD.linkAlpha * sim.quietAt(mx, my);
+      a *= 1 + PL.linkBoost * (p.pulse[i] + p.pulse[j]);
       if (haloOn) {
         const dd = Math.sqrt((mx - ptr.x) ** 2 + (my - ptr.y) ** 2);
         if (dd < HA.outer) {
@@ -171,11 +254,11 @@ const edgeTier = new Int8Array(512);
 
 function drawClusterEdges(ctx: CanvasRenderingContext2D, sim: FieldSimulation) {
   const { p } = sim;
-  ctx.strokeStyle = COLOR.cyan;
   for (let c = 0; c < sim.clusters.length; c++) {
     const cl = sim.clusters[c];
     const a = clusterEdgeAlpha(sim.time - cl.t0);
     if (a < 0.01) continue;
+    ctx.strokeStyle = CLUSTER_HUES[cl.hue];
     computeEdges(cl, p, sim.cfg.neighbours);
     const edges = Math.min(cl.edgeCount, edgeTier.length);
     for (let e = 0; e < edges; e++) {
@@ -202,11 +285,11 @@ function drawClusterEdges(ctx: CanvasRenderingContext2D, sim: FieldSimulation) {
 }
 
 function drawRipples(ctx: CanvasRenderingContext2D, sim: FieldSimulation) {
-  ctx.strokeStyle = COLOR.cyan;
   for (let r = 0; r < sim.ripples.length; r++) {
     const rp = sim.ripples[r];
     const age = sim.time - rp.t0;
     if (age >= RI.duration) continue;
+    ctx.strokeStyle = CLUSTER_HUES[rp.hue];
     const life = 1 - age / RI.duration;
     ctx.globalAlpha = 0.3 * life * Math.sqrt(life);
     ctx.beginPath();
