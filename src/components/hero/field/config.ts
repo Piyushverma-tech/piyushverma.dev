@@ -70,7 +70,7 @@ export const FIELD = {
   },
 
   // Click ripple
-  ripple: { speed: 520, duration: 0.7, band: 28, impulse: 1800, flash: 0.35, max: 4 },
+  ripple: { speed: 520, duration: 0.7, band: 12, impulse: 1600, flash: 0.35, max: 2 },
 
   // Random "charge" pulses while floating: a particle flashes, its links light up, and
   // sometimes the pulse hops to a linked neighbour. Brightness and size only, no glow.
@@ -94,12 +94,12 @@ export const FIELD = {
 
   // The temporary structure
   cluster: {
-    captureRadius: 260,
+    captureRadius: 360,
     minMembers: 5,
     converge: 0.6,
     hold: 1.6,
     fade: 0.4,
-    spacing: 56,
+    spacing: 86,
     spring: 4,
     damping: 7,
     repel: 1400,
@@ -136,9 +136,9 @@ export type ModeConfig = {
 
 export const MODES: Record<LiveMode, ModeConfig> = {
   full: {
-    density: 2000,
+    density: 2500,
     min: 140,
-    max: 560,
+    max: 460,
     dprCap: 2,
     idleFps: 30,
     halo: true,
